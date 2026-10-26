@@ -1,0 +1,42 @@
+name: RDP New
+
+on:
+  workflow_dispatch:
+
+jobs:
+  configure-rdp:
+    # Run only on your own Windows computer registered as a GitHub self-hosted runner.
+    runs-on: [self-hosted, Windows]
+    timeout-minutes: 10
+
+    steps:
+      - name: Enable Remote Desktop securely
+        shell: powershell
+        run: |
+          # Keep Network Level Authentication enabled.
+          Set-ItemProperty `
+            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+            -Name 'fDenyTSConnections' -Value 0 -Force
+
+          Set-ItemProperty `
+            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+            -Name 'UserAuthentication' -Value 1 -Force
+
+          # Allow RDP only from Tailscale's CGNAT address range.
+          Get-NetFirewallRule -DisplayName 'RDP-Tailscale-Only' -ErrorAction SilentlyContinue |
+            Remove-NetFirewallRule
+
+          New-NetFirewallRule `
+            -DisplayName 'RDP-Tailscale-Only' `
+            -Direction Inbound `
+            -Action Allow `
+            -Protocol TCP `
+            -LocalPort 3389 `
+            -RemoteAddress '100.64.0.0/10' `
+            -Profile Any
+
+          Set-Service -Name TermService -StartupType Manual
+          Start-Service -Name TermService
+
+          Write-Host 'Remote Desktop is enabled. Connect through your private Tailscale network.'
+          Write-Host 'Use an existing Windows account that is authorized for Remote Desktop.'
